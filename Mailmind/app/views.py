@@ -171,8 +171,65 @@ from .utils import (
     extract_details,
     get_address_details,
     get_pincode_from_scrap,
-    azure_ocr_extract
+    azure_ocr_extract,
+    # send_whatsapp_message,
+    send_whatsapp_notification,
+    
 )
+
+# def handle_notification(receiver_contact, receiver_address, receiver_pincode, modified_pincode, merged_reciever_pincode):
+#     """
+#     Handle WhatsApp notifications for different cases.
+#     """
+#     print(f"Receiver Contact: {receiver_contact}")
+#     print(f"Receiver Address: {receiver_address}")
+#     print(f"Receiver Pincode: {receiver_pincode}")
+#     print(f"Modified Pincode: {modified_pincode}")
+#     print(f"Merged Pincode: {merged_reciever_pincode}")
+#     if not receiver_contact:
+#         return {"error": "Receiver contact is required to send notifications."}
+
+#     if not receiver_address and not receiver_pincode and receiver_contact:
+#         # Case 4: Only phone number provided
+#         message = "Hello, we noticed incomplete details for your delivery. Please fill out this form: https://example.com/form"
+#         send_whatsapp_message(f"whatsapp:{receiver_contact}", message)
+#         return {"case": 4, "message": "Form link sent to user."}
+
+#     if not receiver_address and receiver_pincode:
+#         # Case 3: Missing address
+#         final_pincode = modified_pincode or merged_reciever_pincode or receiver_pincode
+#         message = (
+#             f"Hello, we have your pincode as {final_pincode}, but your address is missing. "
+#             f"Please complete your details here: https://example.com/form"
+#         )
+#         send_whatsapp_message(f"whatsapp:{receiver_contact}", message)
+#         return {"case": 3, "message": "Form link sent to user for missing address."}
+
+#     if not receiver_pincode:
+#         # Case 2: Missing pincode
+#         final_pincode = modified_pincode or merged_reciever_pincode
+#         if final_pincode:
+#             message = (
+#                 f"Hello, based on your address, the corrected pincode is {final_pincode}. "
+#                 f"Please confirm if this is correct."
+#             )
+#         else:
+#             message = (
+#                 "Hello, we couldn't determine your pincode. Please confirm your details here: https://example.com/form"
+#             )
+#         send_whatsapp_message(f"whatsapp:{receiver_contact}", message)
+#         return {"case": 2, "message": "User notified about corrected pincode."}
+
+#     if not modified_pincode and not merged_reciever_pincode:
+#         # Case 1: All fields are null
+#         message = (
+#             f"Hello, we have your contact and address: {receiver_address}. "
+#             f"However, no pincode is available. Please provide it to ensure timely delivery."
+#         )
+#         send_whatsapp_message(f"whatsapp:{receiver_contact}", message)
+#         return {"case": 1, "message": "User notified about missing pincode."}
+
+#     return {"error": "Unhandled case."}
 
 # Helper Function to Check Merged Pincode
 def check_merged_pincode(pincode):
@@ -262,8 +319,8 @@ class ProcessPostDataView(APIView):
                 print(f"Receiver Text: {receiver_text}")
             except Exception as e:
                 return Response(
-        {"error": f"Failed to extract text from images: {str(e)}"},
-        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {"error": f"Failed to extract text from images: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
     )
 
 
@@ -272,8 +329,8 @@ class ProcessPostDataView(APIView):
                 receiver_details = extract_details(receiver_text)
             except Exception as e:
                 return Response(
-        {"error": f"Failed to extract details from text: {str(e)}"},
-        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": f"Failed to extract details from text: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
     )
 
             sender_name = sender_details.get("name")
@@ -300,7 +357,32 @@ class ProcessPostDataView(APIView):
             modified_pincode = None
             if fetched_pincode and fetched_pincode != receiver_pincode:
                 modified_pincode = fetched_pincode
+                send_whatsapp_notification(     
+                   sender_name = sender_name,
+                   sender_contact=sender_contact,
+                   receiver_address=receiver_address,
+                   provided_pincode=receiver_pincode,
+                   modified_pincode=modified_pincode
+               )
+            merged_reciever_pincode = None
+            if modified_pincode:
+                merged_pincode = check_merged_pincode(modified_pincode)
+                if merged_pincode != modified_pincode:
+                    merged_reciever_pincode = merged_pincode
+            merged_pincode = check_merged_pincode(receiver_pincode)
+            if merged_pincode != receiver_pincode:
+                merged_reciever_pincode = merged_pincode
 
+            
+            # response = handle_notification(
+            #     receiver_contact,
+            #     receiver_address,
+            #     receiver_pincode,
+            #     modified_pincode,
+            #     merged_reciever_pincode
+            # )
+            
+            
             # Save post data
             post_data = PostData.objects.create(
                 image1=image1,
@@ -316,6 +398,8 @@ class ProcessPostDataView(APIView):
                 receiver_latitude=latitude,
                 receiver_longitude=longitude,
                 modified_receiver_pincode=modified_pincode,
+                merged_reciever_pincode = merged_reciever_pincode,
+
             )
 
     # Serialize the saved data
@@ -339,10 +423,7 @@ class ProcessPostDataView(APIView):
         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
             
-    def get(self,request):
-        post_data = PostData.objects.all()
-        serializer = ScannedPostSerializer(post_data, many=True) 
-        return Response({"data": serializer.data}, status=status.HTTP_200_OK)
+    
 
 class PostDataViewSet(viewsets.ModelViewSet):
     queryset = PostData.objects.all()  # Retrieve all records
@@ -356,3 +437,59 @@ class PostDataViewSet(viewsets.ModelViewSet):
             {"error": "POST requests are not allowed on this endpoint."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
+
+from django.http import JsonResponse
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import PostData
+from twilio.twiml.messaging_response import MessagingResponse
+
+@csrf_exempt
+def twilio_whatsapp_webhook(request):
+    """
+    Handles incoming WhatsApp messages via Twilio for chat validation.
+    """
+    if request.method == "POST":
+        # Parse incoming data
+        sender_contact = request.POST.get("From", "").replace("whatsapp:", "").strip()
+        reply_text = request.POST.get("Body", "").strip().lower()
+
+        # Fetch the latest post data for this sender
+        post_data = PostData.objects.filter(sender_contact=sender_contact).order_by('-created_at').first()
+
+        if not post_data:
+            return HttpResponse("No matching post data found.", status=404)
+
+        # Check if the chat is already resolved
+        if post_data.chat_status == "resolved":
+            # Respond with a message stating the chat is already closed
+            response_message = MessagingResponse()
+            response_message.message("This chat has already been resolved. No further actions are needed.")
+            return HttpResponse(str(response_message), content_type="text/xml")
+
+        # Process user response
+        response_message = MessagingResponse()
+        if reply_text == "yes":
+            # Save response and mark chat as resolved
+            post_data.customer_feedback = "Yes"
+            post_data.chat_status = "resolved"
+            post_data.save()
+
+            response_message.message("Thank you! The pincode has been updated.")
+        elif reply_text == "no":
+            # Save response and mark chat as resolved
+            post_data.customer_feedback = "No"
+            post_data.chat_status = "resolved"
+            post_data.save()
+
+            response_message.message(
+                "We cannot process the change. Please visit your nearest post office to update the address or pincode."
+            )
+        else:
+            # Invalid response: Keep chat status as pending
+            response_message.message("Invalid response. Please reply with 'Yes' or 'No'.")
+
+        return HttpResponse(str(response_message), content_type="text/xml")
+
+    return HttpResponse("Invalid request method.", status=405)

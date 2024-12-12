@@ -12,6 +12,7 @@ class PostData(models.Model):
     receiver_address = models.TextField(null=True, blank=True)
     receiver_pincode = models.CharField(max_length=6, null=True, blank=True)
     modified_receiver_pincode = models.CharField(max_length=6, null=True, blank=True)
+    merged_reciever_pincode = models.CharField(max_length=6, null=True, blank=True)
     receiver_latitude = models.TextField(null=True, blank=True)
     receiver_longitude = models.TextField(null=True, blank=True)
     customer_feedback = models.TextField(null=True, blank=True)

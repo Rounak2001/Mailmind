@@ -146,3 +146,60 @@ def azure_ocr_extract(image_path):
     except Exception as e:
         print(f"Error reading text: {str(e)}")
         return ""
+    
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
+
+
+# from twilio.rest import Client
+
+# def send_whatsapp_message(to, message):
+#     """
+#     Send a WhatsApp message using Twilio API.
+#     Args:
+#         to (str): Recipient's WhatsApp number (e.g., "whatsapp:+91XXXXXXXXXX").
+#         message (str): Message to be sent.
+#     """
+#     try:
+#         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+#         message = client.messages.create(
+#             body=message,
+#             from_=TWILIO_WHATSAPP_NUMBER,
+#             to=to
+#         )
+#         print(f"Message sent with SID: {message.sid}")
+#     except Exception as e:
+#         print(f"Failed to send message: {str(e)}")
+from twilio.rest import Client
+
+def send_whatsapp_notification(sender_name,sender_contact, receiver_address, provided_pincode, modified_pincode):
+    """
+    Sends a WhatsApp notification to the sender to confirm the address pincode.
+    """
+    client = Client(os.getenv('TWILIO_ACCOUNT_SID'), os.getenv('TWILIO_AUTH_TOKEN'))
+
+    message_body = (
+        f"Hello!{sender_name} The receiver address you provided is:\n\n"
+        f"{receiver_address}\n\n"
+        f"The pincode you provided is: {provided_pincode}\n"
+        f"The correct pincode for this address is: {modified_pincode}\n\n"
+        f"Do you want to update the pincode to the correct one? Reply with 'Yes' to confirm or 'No' for manual correction."
+    )
+
+    try:
+        message = client.messages.create(
+            from_=os.getenv('TWILIO_WHATSAPP_NUMBER'),
+            to=f"whatsapp:{sender_contact}",
+            body=message_body
+        )
+        print(f"Message sent with SID: {message.sid}")
+    except Exception as e:
+        print(f"Error sending WhatsApp message: {e}")
+
+

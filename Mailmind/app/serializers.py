@@ -22,6 +22,7 @@ class ScannedPostSerializer(serializers.ModelSerializer):
             'receiver_address',
             'receiver_pincode',
             'modified_receiver_pincode',
+            'merged_reciever_pincode',
             'receiver_latitude',
             'receiver_longitude',
             'customer_feedback',
