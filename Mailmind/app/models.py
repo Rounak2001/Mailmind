@@ -1,7 +1,8 @@
 from django.db import models
 
 class PostData(models.Model):
-    image = models.ImageField(upload_to='post_images/')
+    image1 = models.ImageField(upload_to='post_images/')
+    image2 = models.ImageField(upload_to='post_images/',null=True)
     sender_name = models.CharField(max_length=255, null=True, blank=True)
     sender_contact = models.CharField(max_length=20, null=True, blank=True)
     sender_address = models.TextField(null=True, blank=True)
@@ -27,3 +28,13 @@ class PostData(models.Model):
 
     def __str__(self):
         return f"Post from {self.sender_name}"
+    
+from django.db import models
+
+class PincodeMapping(models.Model):
+    old_pincode = models.CharField(max_length=6, unique=True, help_text="The old pincode that has been merged.")
+    new_pincode = models.CharField(max_length=6, help_text="The new merged pincode.")
+
+    def __str__(self):
+        return f"{self.old_pincode} -> {self.new_pincode}"
+

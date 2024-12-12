@@ -2,7 +2,12 @@ import re
 import requests
 from dotenv import load_dotenv
 import os
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup   
+from azure.cognitiveservices.vision.computervision import ComputerVisionClient
+from azure.cognitiveservices.vision.computervision.models import OperationStatusCodes
+from msrest.authentication import CognitiveServicesCredentials
+import time
+
 
 
 def extract_details(text):
@@ -55,12 +60,10 @@ def get_address_details(address):
     if response.status_code == 200:
         data = response.json()
         if data['status'] == 'OK':
-            # Extract address components
             result = data['results'][0]
             address_components = result['address_components']
             geometry = result['geometry']['location']
             
-            # Find pincode
             pincode = next(
                 (comp['long_name'] for comp in address_components 
                  if 'postal_code' in comp['types']), 
@@ -101,3 +104,45 @@ def get_pincode_from_scrap(address):
         return pin_code_matches[0]  # Return the first match (assuming it is the correct one)
     else:
         return None
+
+
+# Load environment variables
+load_dotenv()
+subscription_key = os.getenv('subscription_key')
+endpoint = "https://pibit-azure-ocr-paid.cognitiveservices.azure.com/"
+
+
+computervision_client = ComputerVisionClient(
+    endpoint, CognitiveServicesCredentials(subscription_key)
+)
+
+def azure_ocr_extract(image_path):
+   
+    try:
+        
+        with open(image_path, "rb") as image_stream:
+            # Start the read operation with cropping
+            read_response = computervision_client.read_in_stream(image_stream, raw=True)
+
+        
+        operation_location = read_response.headers["Operation-Location"]
+        operation_id = operation_location.split("/")[-1]
+
+        
+        while True:
+            read_result = computervision_client.get_read_result(operation_id)
+            if read_result.status not in [OperationStatusCodes.running, OperationStatusCodes.not_started]:
+                break
+            time.sleep(1)
+
+        
+        text = " "
+        if read_result.status == OperationStatusCodes.succeeded:
+            for page in read_result.analyze_result.read_results:
+                for line in page.lines:
+                    text = text + line.text + " "
+                return text
+        
+    except Exception as e:
+        print(f"Error reading text: {str(e)}")
+        return ""
